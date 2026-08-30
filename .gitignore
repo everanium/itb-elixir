@@ -1,0 +1,15 @@
+# Mix build output
+_build/
+deps/
+.mix/
+
+# Compiled BEAM artefacts
+*.beam
+*.ez
+
+# Erlang crash dumps
+erl_crash.dump
+
+# Language-server / editor caches
+.elixir_ls/
+.elixir-tools/

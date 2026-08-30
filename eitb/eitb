@@ -1,0 +1,256 @@
+#!/usr/bin/env elixir
+# eitb — command-line demonstrator for the ITB Elixir binding.
+#
+# Subcommands:
+#
+#   eitb version                                   library + binding versions
+#   eitb hashes                                    shipped hash primitive roster
+#   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
+#   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
+#
+# `encrypt` prints the session blob to stderr as hex; feed that hex
+# back to `decrypt` on the receiving side.
+#
+# A plain executable script (not an embedded escript archive): the
+# NIF shim resolves its .so through the application priv dir, which
+# an escript archive cannot provide. The compiled binding
+# (./build.sh in bindings/elixir) is resolved relative to this
+# script's location: ../_build/dev/lib/{itb,itb_elixir}/ebin.
+
+defmodule EITB do
+  @eitb_elixir_version "0.3.0"
+
+  def main(args) do
+    :ok = add_binding_paths()
+    System.halt(dispatch(args))
+  end
+
+  defp dispatch(["version"]), do: cmd_version()
+  defp dispatch(["hashes"]), do: cmd_hashes()
+
+  defp dispatch(["encrypt", profile, in_file, out_file]),
+    do: cmd_encrypt(profile, in_file, out_file)
+
+  defp dispatch(["decrypt", profile, blob_hex, in_file, out_file]),
+    do: cmd_decrypt(profile, blob_hex, in_file, out_file)
+
+  defp dispatch(_), do: usage()
+
+  defp usage do
+    IO.puts(:stderr, """
+    usage: eitb version
+           eitb hashes
+           eitb encrypt <profile> <in-file> <out-file>
+           eitb decrypt <profile> <blob-hex> <in-file> <out-file>\
+    """)
+
+    2
+  end
+
+  defp add_binding_paths do
+    build = Path.expand("../_build/dev/lib", __DIR__)
+    ebins = [Path.join(build, "itb/ebin"), Path.join(build, "itb_elixir/ebin")]
+
+    case Enum.filter(ebins, &(not File.dir?(&1))) do
+      [] ->
+        Enum.each(ebins, fn ebin -> true = Code.append_path(ebin) end)
+        :ok
+
+      missing ->
+        IO.puts(
+          :stderr,
+          "eitb: binding not built (#{Enum.join(missing, ", ")} missing); " <>
+            "run ./build.sh first"
+        )
+
+        System.halt(1)
+    end
+  end
+
+  defp fail(what, {status, detail}) do
+    IO.puts(:stderr, "eitb: #{what}: #{status}: #{detail}")
+    1
+  end
+
+  # Defensive Go-runtime pacing for cipher workloads on large files:
+  # a soft memory cap + aggressive GC keep the scratch heap bounded.
+  # The setter return values report the previous settings, not an
+  # error.
+  defp cap_go_runtime do
+    _ = ITB.set_memory_limit(512 * 1024 * 1024)
+    _ = ITB.set_gc_percent(20)
+    :ok
+  end
+
+  defp cmd_version do
+    case ITB.version() do
+      {:ok, version} ->
+        IO.puts("libitb #{version}")
+        IO.puts("itb-elixir #{@eitb_elixir_version}")
+        0
+
+      {:error, reason} ->
+        fail("version", reason)
+    end
+  end
+
+  defp cmd_hashes do
+    ITB.hashes()
+    |> Enum.with_index()
+    |> Enum.each(fn {{name, width}, index} ->
+      :io.format(~c"~2b  ~-12s ~b bits~n", [index, name, width])
+    end)
+
+    0
+  end
+
+  # Profiles whose canonical name begins with "streaming-" route
+  # through the streaming session pair instead of the Single Message
+  # pair. A one-shot Streaming encrypt is a session opened, fed the
+  # whole plaintext, and drained to a single binary via ITB.Stream.
+  defp streaming_profile?(profile), do: String.starts_with?(profile, "streaming-")
+
+  # Recursively create the parent directory of `path` (mkdir -p).
+  defp ensure_parent_dir!(path) do
+    :ok = File.mkdir_p!(Path.dirname(path))
+  end
+
+  defp stream_all(pipe, direction, chunks) do
+    fun =
+      case direction do
+        :encrypt -> &ITB.Stream.encrypt/2
+        :decrypt -> &ITB.Stream.decrypt/2
+      end
+
+    pipe
+    |> fun.(chunks)
+    |> Enum.to_list()
+    |> IO.iodata_to_binary()
+  end
+
+  defp cmd_encrypt(profile, in_file, out_file) do
+    :ok = cap_go_runtime()
+
+    case File.read(in_file) do
+      {:error, read_err} ->
+        IO.puts(:stderr, "eitb: cannot read #{in_file}: #{read_err}")
+        1
+
+      {:ok, plain} ->
+        case ITB.init(profile) do
+          {:error, reason} ->
+            fail("init", reason)
+
+          {:ok, pipe} ->
+            rc = encrypt_with(pipe, plain, profile, in_file, out_file)
+            :ok = ITB.free(pipe)
+            rc
+        end
+    end
+  end
+
+  defp encrypt_with(pipe, plain, profile, in_file, out_file) do
+    result =
+      if streaming_profile?(profile) do
+        try do
+          {:ok, stream_all(pipe, :encrypt, [plain])}
+        rescue
+          e in ITB.Error -> {:error, {:stream, Exception.message(e)}}
+        end
+      else
+        ITB.encrypt_message(pipe, plain)
+      end
+
+    case result do
+      {:error, reason} ->
+        fail("encrypt", reason)
+
+      {:ok, wire} ->
+        ensure_parent_dir!(out_file)
+
+        case File.write(out_file, wire) do
+          {:error, write_err} ->
+            IO.puts(:stderr, "eitb: cannot write #{out_file}: #{write_err}")
+            1
+
+          :ok ->
+            {:ok, blob} = ITB.blob(pipe)
+            IO.puts(:stderr, Base.encode16(blob, case: :lower))
+
+            IO.puts(
+              "encrypted #{in_file} -> #{out_file} " <>
+                "(#{byte_size(plain)} -> #{byte_size(wire)} bytes)"
+            )
+
+            0
+        end
+    end
+  end
+
+  defp cmd_decrypt(profile, blob_hex, in_file, out_file) do
+    :ok = cap_go_runtime()
+
+    case Base.decode16(blob_hex, case: :mixed) do
+      :error ->
+        IO.puts(:stderr, "eitb: invalid blob hex")
+        1
+
+      {:ok, blob} ->
+        case File.read(in_file) do
+          {:error, read_err} ->
+            IO.puts(:stderr, "eitb: cannot read #{in_file}: #{read_err}")
+            1
+
+          {:ok, wire} ->
+            decrypt_with(profile, blob, wire, in_file, out_file)
+        end
+    end
+  end
+
+  defp decrypt_with(profile, blob, wire, in_file, out_file) do
+    case ITB.open(profile, blob) do
+      {:error, reason} ->
+        fail("open", reason)
+
+      {:ok, pipe} ->
+        result =
+          if streaming_profile?(profile) do
+            try do
+              {:ok, stream_all(pipe, :decrypt, [wire])}
+            rescue
+              e in ITB.Error -> {:error, {:stream, Exception.message(e)}}
+            end
+          else
+            ITB.decrypt_message(pipe, wire)
+          end
+
+        rc =
+          case result do
+            {:error, dec_err} ->
+              fail("decrypt", dec_err)
+
+            {:ok, plain} ->
+              ensure_parent_dir!(out_file)
+
+              case File.write(out_file, plain) do
+                {:error, write_err} ->
+                  IO.puts(:stderr, "eitb: cannot write #{out_file}: #{write_err}")
+                  1
+
+                :ok ->
+                  IO.puts(
+                    "decrypted #{in_file} -> #{out_file} " <>
+                      "(#{byte_size(wire)} -> #{byte_size(plain)} bytes)"
+                  )
+
+                  0
+              end
+          end
+
+        :ok = ITB.free(pipe)
+        rc
+    end
+  end
+end
+
+EITB.main(System.argv())
