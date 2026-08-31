@@ -294,7 +294,7 @@ defmodule ITB do
   # Runtime + diagnostics
   # ------------------------------------------------------------------
 
-  @doc ~S(The libitb library version string, e.g. `"0.3.0"`.)
+  @doc ~S(The libitb library version string, e.g. `"0.3.1"`.)
   @spec version() :: {:ok, binary()} | {:error, reason()}
   def version, do: :itb.version()
 

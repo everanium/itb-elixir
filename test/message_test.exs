@@ -10,7 +10,6 @@ defmodule ITB.MessageTest do
     {sender, receiver} = pair(profile, %{})
 
     payloads = [
-      <<>>,
       <<0>>,
       "any text or binary data",
       :binary.copy(<<0x00>>, 4096),
@@ -20,7 +19,7 @@ defmodule ITB.MessageTest do
 
     for plain <- payloads do
       {:ok, wire} = ITB.encrypt_message(sender, plain)
-      assert plain == <<>> or wire != plain
+      assert wire != plain
       {:ok, back} = ITB.decrypt_message(receiver, wire)
       assert back == plain
     end
@@ -66,5 +65,18 @@ defmodule ITB.MessageTest do
     assert back == plain
     :ok = ITB.free(receiver)
     :ok = ITB.free(sender)
+  end
+
+  test "empty payload is rejected with bad_input" do
+    # Go core rejects zero-length plaintext uniformly with
+    # ErrEmptyInput -> :bad_input before any wire is produced. An
+    # empty message has no cover story: it is always distinguishable
+    # at some layer (wire length, timing, traffic count). Callers for
+    # whom an empty signal is meaningful send a marker byte instead.
+    for profile <- ["singlemsg-triple-mac-v1", "singlemsg-triple-nomac-v1"] do
+      {:ok, sender} = ITB.init(profile)
+      assert {:error, {:bad_input, _}} = ITB.encrypt_message(sender, <<>>)
+      :ok = ITB.free(sender)
+    end
   end
 end

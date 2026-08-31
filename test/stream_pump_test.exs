@@ -35,12 +35,20 @@ defmodule ITB.StreamPumpTest do
     :ok = ITB.free(sender)
   end
 
-  test "zero-length payload through a full session" do
-    {sender, receiver} = pair("streaming-aead-triple-mac-v1", %{})
-    wire = pump(sender, :encrypt, <<>>)
-    assert byte_size(wire) > 0
-    assert pump(receiver, :decrypt, wire) == <<>>
-    :ok = ITB.free(receiver)
+  test "zero-length payload through a full session is rejected with bad_input" do
+    # Go core rejects zero-payload streams uniformly with
+    # ErrEmptyInput -> :bad_input. The error surfaces on the drain
+    # after stream_end when no bytes were written; a stream carrying
+    # no plaintext produces no wire on this surface.
+    {:ok, sender} = ITB.init("streaming-aead-triple-mac-v1")
+    {:ok, session} = ITB.encrypt_stream(sender)
+    end_result = ITB.stream_end(session)
+    read_result = ITB.stream_read(session, 1024)
+
+    assert match?({:error, {:bad_input, _}}, end_result) or
+             match?({:error, {:bad_input, _}}, read_result)
+
+    :ok = ITB.stream_free(session)
     :ok = ITB.free(sender)
   end
 end

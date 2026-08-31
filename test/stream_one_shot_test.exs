@@ -12,7 +12,6 @@ defmodule ITB.StreamOneShotTest do
     {sender, receiver} = pair(profile, %{})
 
     payloads = [
-      <<>>,
       <<0>>,
       "any text or binary data",
       :crypto.strong_rand_bytes((1 <<< 18) + 12_345)
@@ -20,7 +19,7 @@ defmodule ITB.StreamOneShotTest do
 
     for plain <- payloads do
       {:ok, wire} = ITB.encrypt_stream_one_shot(sender, plain)
-      assert plain == <<>> or byte_size(wire) > byte_size(plain)
+      assert byte_size(wire) > byte_size(plain)
       {:ok, back} = ITB.decrypt_stream_one_shot(receiver, wire)
       assert back == plain
     end
@@ -69,6 +68,16 @@ defmodule ITB.StreamOneShotTest do
     :ok = ITB.free(receiver)
     :ok = ITB.free(sender)
     assert_raise ITB.Error, fn -> ITB.encrypt_stream_one_shot!(sender, plain) end
+  end
+
+  test "empty payload is rejected with bad_input" do
+    # Go core rejects zero-length plaintext uniformly with
+    # ErrEmptyInput -> :bad_input before any wire is produced.
+    for profile <- ["streaming-aead-triple-mac-v1", "streaming-noaead-triple-v1"] do
+      {:ok, sender} = ITB.init(profile)
+      assert {:error, {:bad_input, _}} = ITB.encrypt_stream_one_shot(sender, <<>>)
+      :ok = ITB.free(sender)
+    end
   end
 
   # Probes successive flip positions until one is rejected; false

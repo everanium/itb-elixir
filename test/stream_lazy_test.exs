@@ -28,11 +28,18 @@ defmodule ITB.StreamLazyTest do
     :ok = ITB.free(sender)
   end
 
-  test "empty enumerable still finalises to a decryptable wire" do
+  test "empty enumerable raises bad_input on finalise" do
+    # Go core rejects zero-payload streams uniformly with
+    # ErrEmptyInput -> :bad_input; the lazy adapter surfaces this as
+    # an ITB.Error from the consuming process.
     {sender, receiver} = pair("streaming-aead-triple-mac-v1", %{})
-    wire = sender |> ITB.stream_encrypt([]) |> Enum.into(<<>>)
-    assert byte_size(wire) > 0
-    assert receiver |> ITB.stream_decrypt([wire]) |> Enum.into(<<>>) == <<>>
+
+    err =
+      assert_raise ITB.Error, fn ->
+        sender |> ITB.stream_encrypt([]) |> Enum.into(<<>>)
+      end
+
+    assert err.status == :bad_input
     :ok = ITB.free(receiver)
     :ok = ITB.free(sender)
   end
