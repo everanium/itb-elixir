@@ -10,8 +10,8 @@ defmodule ITBTest.Util do
   @doc "Sender + receiver pipelines over one profile / opts pair."
   def pair(profile, opts \\ %{}) do
     {:ok, sender} = ITB.init(profile, opts)
-    {:ok, blob} = ITB.blob(sender)
-    {:ok, receiver} = ITB.open(profile, blob, opts)
+    {:ok, blob} = ITB.save(sender)
+    {:ok, receiver} = ITB.load(blob)
     {sender, receiver}
   end
 

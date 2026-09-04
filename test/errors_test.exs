@@ -1,14 +1,14 @@
 defmodule ITB.ErrorsTest do
-  # Error-mapping surface: opaque-string relay, tampered-wire MAC
-  # failure, freed-handle paths, bang-variant raises, duplicate
-  # profile registration (with an 8-entry `innerHashes`
-  # constellation).
+  # Error-mapping surface: opaque-string relay, unknown profile,
+  # tampered-wire MAC failure, freed-handle paths, bang-variant
+  # raises, profile registration from a JSON record (with an 8-entry
+  # `hashes` constellation), duplicate registration.
   use ExUnit.Case
 
   import ITBTest.Util, only: [pair: 2, flip_byte: 2]
 
   test "unknown profile" do
-    {:error, {:bad_input, detail}} = ITB.init("no-such-profile")
+    {:error, {:unknown_profile, detail}} = ITB.init("no-such-profile")
     assert byte_size(detail) > 0
   end
 
@@ -26,15 +26,14 @@ defmodule ITB.ErrorsTest do
   end
 
   test "malformed blob" do
-    assert {:error, _} =
-             ITB.open("singlemsg-triple-mac-v1", "not a session blob")
+    assert {:error, _} = ITB.load("not a session blob")
   end
 
   test "bang variant raises ITB.Error" do
     err = assert_raise ITB.Error, fn -> ITB.init!("no-such-profile") end
-    assert err.status == :bad_input
+    assert err.status == :unknown_profile
     assert byte_size(err.detail) > 0
-    assert Exception.message(err) =~ "bad_input"
+    assert Exception.message(err) =~ "unknown_profile"
     assert err.status in ITB.Status.known()
   end
 
@@ -78,7 +77,7 @@ defmodule ITB.ErrorsTest do
     # Idempotent.
     :ok = ITB.free(pipe)
     assert {:error, {:bad_handle, _}} = ITB.encrypt_message(pipe, "x")
-    assert {:error, {:bad_handle, _}} = ITB.blob(pipe)
+    assert {:error, {:bad_handle, _}} = ITB.save(pipe)
     assert {:error, {:bad_handle, _}} = ITB.encrypt_stream(pipe)
   end
 
@@ -100,23 +99,33 @@ defmodule ITB.ErrorsTest do
     assert_raise FunctionClauseError, fn -> ITB.init("p", :not_opts) end
   end
 
-  test "register_profile round trip and duplicate rejection" do
-    # RegisterProfile with an 8-entry width-256 innerHashes
-    # constellation, layers off; the registered profile round-trips
-    # and a duplicate registration fails with profile_exists.
-    opts = %{
+  test "register round trip and duplicate rejection" do
+    # Register with an 8-entry width-256 hashes constellation, layers
+    # off; the registered profile round-trips, is visible in the
+    # catalogue, and a duplicate registration fails with
+    # profile_exists.
+    hashes = ~w(blake3 blake2s areion256 blake2b256 chacha20 blake3 blake2s areion256)
+
+    profile = %{
       mode: "singlemsg-nomac",
       width: 256,
-      innerHashes: "blake3,blake2s,areion256,blake2b256,chacha20,blake3,blake2s,areion256",
-      keyBits: 1024,
-      parallaxOn: false,
-      wrapperOn: false
+      hashes: hashes,
+      keybits: 1024,
+      parallax: false,
+      wrapper: false
     }
 
-    :ok = ITB.register_profile("elixir-binding-test-mixed", opts)
+    :ok = ITB.register("elixir-binding-test-mixed", profile)
+    assert "elixir-binding-test-mixed" in ITB.profiles()
+    assert ITB.lookup!("elixir-binding-test-mixed")["hashes"] == hashes
 
     assert {:error, {:profile_exists, _}} =
-             ITB.register_profile("elixir-binding-test-mixed", opts)
+             ITB.register("elixir-binding-test-mixed", profile)
+
+    # Strict record decode on the Go side: an unknown key is rejected
+    # there, not by the binding.
+    assert {:error, {:bad_input, _}} =
+             ITB.register("elixir-binding-test-badkey", ~s({"mode":"singlemsg-nomac","bogus":1}))
 
     {sender, receiver} = pair("elixir-binding-test-mixed", %{})
     plain = :crypto.strong_rand_bytes(8192)

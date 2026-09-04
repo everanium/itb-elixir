@@ -11,8 +11,8 @@ defmodule ITB do
   Quick start:
 
       {:ok, sender} = ITB.init("singlemsg-triple-mac-v1")
-      {:ok, blob} = ITB.blob(sender)
-      {:ok, receiver} = ITB.open("singlemsg-triple-mac-v1", blob)
+      {:ok, blob} = ITB.save(sender)
+      {:ok, receiver} = ITB.load(blob)
       {:ok, wire} = ITB.encrypt_message(sender, "hi")
       {:ok, "hi"} = ITB.decrypt_message(receiver, wire)
       :ok = ITB.free(receiver)
@@ -58,6 +58,19 @@ defmodule ITB do
   @typedoc "Error payload: status atom plus Go-side diagnostic."
   @type reason :: {ITB.Status.t(), binary()}
 
+  @typedoc """
+  Profile record: the JSON object libitb emits from `inspect/1` /
+  `lookup/1` and accepts in `register/2`, decoded with the OTP `json`
+  module (binary keys `"name"`, `"mode"`, `"width"`, `"hash"`,
+  `"hashes"`, `"keybits"`, `"mac"`, `"tagstub"`, `"chunk"`,
+  `"wrapper"`, `"outer"`, `"parallax"`, `"palette"`, `"segment"`;
+  absent keys are optional fields at their zero value).
+  """
+  @type profile :: %{optional(binary() | atom()) => term()}
+
+  # `inspect/1` below is the blob-record decoder, not Kernel.inspect.
+  import Kernel, except: [inspect: 1, inspect: 2]
+
   # Default drain slice for stream_read/1 (1 MiB).
   @read_buf 1_048_576
 
@@ -67,7 +80,8 @@ defmodule ITB do
 
   @doc """
   Constructs a fresh Pipeline against the named profile. Opts may be
-  omitted for pure profile defaults.
+  omitted for pure profile defaults. The session blob is available
+  through `save/1`.
   """
   @spec init(iodata() | atom(), opts()) :: {:ok, pipeline()} | {:error, reason()}
   def init(profile, opts \\ %{}), do: :itb.init(profile, opts)
@@ -77,48 +91,79 @@ defmodule ITB do
   def init!(profile, opts \\ %{}), do: bang(init(profile, opts))
 
   @doc """
-  Reconstructs a Pipeline from a blob produced by a sender's init /
-  rekey, using the blob-embedded masters.
+  Reconstructs a Pipeline from a blob produced by `save/1` or
+  `rekey/3`. The blob's embedded profile record is the sole
+  structural source — no profile name, no opts. `perm_master` /
+  `wrap_master` override the blob-embedded masters when both are
+  supplied (a half-supplied pair is rejected Go-side); the defaults
+  `<<>>` / `<<>>` select the blob-embedded masters.
   """
-  @spec open(iodata() | atom(), binary(), opts()) :: {:ok, pipeline()} | {:error, reason()}
-  def open(profile, blob, opts \\ %{}), do: :itb.open(profile, blob, opts)
+  @spec load(binary(), binary(), binary()) :: {:ok, pipeline()} | {:error, reason()}
+  def load(blob, perm_master \\ <<>>, wrap_master \\ <<>>),
+    do: :itb.load(blob, perm_master, wrap_master)
+
+  @doc "As `load/3`, unwrapping the pipeline or raising `ITB.Error`."
+  @spec load!(binary(), binary(), binary()) :: pipeline()
+  def load!(blob, perm_master \\ <<>>, wrap_master \\ <<>>),
+    do: bang(load(blob, perm_master, wrap_master))
 
   @doc """
-  As `open/3` with explicit master overrides. Both masters must be
-  supplied non-empty (a half-supplied pair is rejected); pass
-  `<<>>` / `<<>>` for the blob-embedded masters.
+  `load/3` for a blob stored in a file; the file is read inside the
+  library.
   """
-  @spec open(iodata() | atom(), binary(), opts(), binary(), binary()) ::
-          {:ok, pipeline()} | {:error, reason()}
-  def open(profile, blob, opts, perm_master, wrap_master),
-    do: :itb.open(profile, blob, opts, perm_master, wrap_master)
+  @spec load_f(iodata(), binary(), binary()) :: {:ok, pipeline()} | {:error, reason()}
+  def load_f(path, perm_master \\ <<>>, wrap_master \\ <<>>),
+    do: :itb.load_f(path, perm_master, wrap_master)
 
-  @doc "As `open/3`, unwrapping the pipeline or raising `ITB.Error`."
-  @spec open!(iodata() | atom(), binary(), opts()) :: pipeline()
-  def open!(profile, blob, opts \\ %{}), do: bang(open(profile, blob, opts))
+  @doc "As `load_f/3`, unwrapping the pipeline or raising `ITB.Error`."
+  @spec load_f!(iodata(), binary(), binary()) :: pipeline()
+  def load_f!(path, perm_master \\ <<>>, wrap_master \\ <<>>),
+    do: bang(load_f(path, perm_master, wrap_master))
 
   @doc """
-  The exported session-bundle blob for the receiver side; refreshed
-  by `rekey/3`.
+  The current serialised session blob — the bytes `init/2` produced,
+  the bytes `load/3` re-marshalled, or the bytes of the latest
+  `rekey/3`.
   """
-  @spec blob(pipeline()) :: {:ok, binary()} | {:error, reason()}
-  def blob(pipeline), do: :itb.blob(pipeline)
+  @spec save(pipeline()) :: {:ok, binary()} | {:error, reason()}
+  def save(pipeline), do: :itb.save(pipeline)
 
-  @doc "As `blob/1`, unwrapping the binary or raising `ITB.Error`."
-  @spec blob!(pipeline()) :: binary()
-  def blob!(pipeline), do: bang(blob(pipeline))
+  @doc "As `save/1`, unwrapping the binary or raising `ITB.Error`."
+  @spec save!(pipeline()) :: binary()
+  def save!(pipeline), do: bang(save(pipeline))
 
   @doc """
-  Rotates the parallax + wrapper masters and refreshes the blob.
-  Must not run concurrently with cipher calls or open stream
-  sessions on the same Pipeline.
+  Writes the current session blob to `path` inside the library (mode
+  `0600`; the containing directory must exist).
   """
-  @spec rekey(pipeline(), binary(), binary()) :: :ok | {:error, reason()}
+  @spec save_f(pipeline(), iodata()) :: :ok | {:error, reason()}
+  def save_f(pipeline, path), do: :itb.save_f(pipeline, path)
+
+  @doc "As `save_f/2`, returning `:ok` or raising `ITB.Error`."
+  @spec save_f!(pipeline(), iodata()) :: :ok
+  def save_f!(pipeline, path), do: bang(save_f(pipeline, path))
+
+  @doc """
+  Sets the worker cap for every subsequent cipher call. `n` is
+  clamped, never rejected: `n <= 0` selects auto, `1..256` pins the
+  cap, larger values are treated as 256. The cap is per-machine
+  tuning and is never written to the blob.
+  """
+  @spec max_workers(pipeline(), integer()) :: :ok | {:error, reason()}
+  def max_workers(pipeline, n), do: :itb.max_workers(pipeline, n)
+
+  @doc """
+  Rotates the parallax + wrapper masters and returns the refreshed
+  session blob (also observable through `save/1`). Must not run
+  concurrently with cipher calls or open stream sessions on the same
+  Pipeline.
+  """
+  @spec rekey(pipeline(), binary(), binary()) :: {:ok, binary()} | {:error, reason()}
   def rekey(pipeline, perm_master, wrap_master),
     do: :itb.rekey(pipeline, perm_master, wrap_master)
 
-  @doc "As `rekey/3`, returning `:ok` or raising `ITB.Error`."
-  @spec rekey!(pipeline(), binary(), binary()) :: :ok
+  @doc "As `rekey/3`, unwrapping the refreshed blob or raising `ITB.Error`."
+  @spec rekey!(pipeline(), binary(), binary()) :: binary()
   def rekey!(pipeline, perm_master, wrap_master),
     do: bang(rekey(pipeline, perm_master, wrap_master))
 
@@ -275,39 +320,62 @@ defmodule ITB do
     do: ITB.Stream.decrypt(pipeline, enumerable, opts)
 
   # ------------------------------------------------------------------
-  # Profile registration
+  # Profile catalogue
   # ------------------------------------------------------------------
 
   @doc """
-  Registers a user-defined Triple profile under `name`; the opts
-  follow the register-profile grammar validated by Go. A duplicate
+  Decodes the blob's embedded profile record without opening a
+  Pipeline. No registry read, no primitive probe.
+  """
+  @spec inspect(binary()) :: {:ok, profile()} | {:error, reason()}
+  def inspect(blob), do: :itb.inspect(blob)
+
+  @doc "As `inspect/1`, unwrapping the record or raising `ITB.Error`."
+  @spec inspect!(binary()) :: profile()
+  def inspect!(blob), do: bang(inspect(blob))
+
+  @doc """
+  Registers a profile record under `name` so subsequent `init/2` /
+  `lookup/1` calls resolve it. `profile` is the record as a map (the
+  shape `inspect/1` / `lookup/1` return) or an already-encoded JSON
+  binary; a `"name"` key inside it, if present, must be empty or
+  equal to `name`. Validation is performed by libitb; a duplicate
   name fails with `{:error, {:profile_exists, _}}`.
   """
-  @spec register_profile(iodata() | atom(), opts()) :: :ok | {:error, reason()}
-  def register_profile(name, opts), do: :itb.register_profile(name, opts)
+  @spec register(iodata() | atom(), profile() | iodata()) :: :ok | {:error, reason()}
+  def register(name, profile), do: :itb.register(name, profile)
 
-  @doc "As `register_profile/2`, returning `:ok` or raising `ITB.Error`."
-  @spec register_profile!(iodata() | atom(), opts()) :: :ok
-  def register_profile!(name, opts), do: bang(register_profile(name, opts))
+  @doc "As `register/2`, returning `:ok` or raising `ITB.Error`."
+  @spec register!(iodata() | atom(), profile() | iodata()) :: :ok
+  def register!(name, profile), do: bang(register(name, profile))
+
+  @doc """
+  The profile record registered under `name` (a shipped catalogue
+  entry or a prior `register/2`). An unknown name fails with
+  `{:error, {:unknown_profile, _}}`.
+  """
+  @spec lookup(iodata() | atom()) :: {:ok, profile()} | {:error, reason()}
+  def lookup(name), do: :itb.lookup(name)
+
+  @doc "As `lookup/1`, unwrapping the record or raising `ITB.Error`."
+  @spec lookup!(iodata() | atom()) :: profile()
+  def lookup!(name), do: bang(lookup(name))
+
+  @doc "The sorted list of every registered profile name."
+  @spec profiles() :: [binary()]
+  def profiles, do: :itb.profiles()
 
   # ------------------------------------------------------------------
   # Runtime + diagnostics
   # ------------------------------------------------------------------
 
-  @doc ~S(The libitb library version string, e.g. `"0.3.5"`.)
+  @doc ~S(The libitb library version string, e.g. `"0.4.1"`.)
   @spec version() :: {:ok, binary()} | {:error, reason()}
   def version, do: :itb.version()
 
   @doc "As `version/0`, unwrapping the binary or raising `ITB.Error`."
   @spec version!() :: binary()
   def version!, do: bang(version())
-
-  @doc """
-  The shipped hash primitive roster as `[{name, width_bits}]` in
-  canonical registry order.
-  """
-  @spec hashes() :: [{binary(), pos_integer()}]
-  def hashes, do: :itb.hashes()
 
   @doc """
   The Go-side diagnostic recorded by the most recent failing libitb

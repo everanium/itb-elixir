@@ -15,8 +15,8 @@ defmodule ITB.StreamCancelTest do
     :ok = ITB.stream_free(session)
 
     # The Pipeline stays usable after the cancelled session.
-    {:ok, blob} = ITB.blob(sender)
-    {:ok, receiver} = ITB.open("streaming-aead-triple-mac-v1", blob)
+    {:ok, blob} = ITB.save(sender)
+    {:ok, receiver} = ITB.load(blob)
     plain = "after cancel"
     {:ok, wire} = ITB.encrypt_message(sender, plain)
     {:ok, back} = ITB.decrypt_message(receiver, wire)

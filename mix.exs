@@ -10,7 +10,7 @@ defmodule ItbElixir.MixProject do
   def project do
     [
       app: :itb_elixir,
-      version: "0.3.5",
+      version: "0.4.1",
       elixir: "~> 1.17",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: false,

@@ -23,6 +23,9 @@ defmodule ITB.Status do
           | :seed_width_mix
           | :bad_mac
           | :mac_failure
+          | :blob_malformed_recipe
+          | :recipe_primitive_unknown
+          | :unknown_profile
           | :blob_mode_mismatch
           | :blob_malformed
           | :blob_version_too_new
@@ -44,6 +47,9 @@ defmodule ITB.Status do
     :seed_width_mix,
     :bad_mac,
     :mac_failure,
+    :blob_malformed_recipe,
+    :recipe_primitive_unknown,
+    :unknown_profile,
     :blob_mode_mismatch,
     :blob_malformed,
     :blob_version_too_new,
