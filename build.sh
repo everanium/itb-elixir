@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 #
-# build.sh -- one-step build for the Elixir binding. Chains the
-# Erlang binding's build.sh (libitb3.so + the C binding's static
-# archive + the NIF shim) and then compiles the Mix project; Mix
-# rebuilds the Erlang application as a rebar3 path dependency.
-# Prerequisites (Go, a C11 compiler, GNU make, Erlang/OTP 27+,
-# rebar3, Elixir 1.17+) must be installed separately; see README.md
-# "Prerequisites".
+# One-step build for the Elixir binding. Chains the Erlang binding's
+# build.sh (libitb3.so + the C binding's static archive + the NIF shim)
+# and then compiles the Mix project and the loop stress harness; Mix
+# rebuilds the Erlang application as a rebar3 path dependency. Prerequisites (Go, a C11
+# compiler, GNU make, Erlang/OTP 27+, rebar3, Elixir 1.17+) must be
+# installed separately; see README.md "Prerequisites".
 #
 # The build starts by removing every artefact this binding owns, so no
 # output of an earlier build can survive into this one and mask a
@@ -54,6 +53,7 @@ ARTEFACTS=(
     erl_crash.dump
     '*.beam'
     '*.ez'
+    'loop/*.beam'
 )
 
 # Containment is checked against the physical path, so the candidate
@@ -121,6 +121,14 @@ mix compile --warnings-as-errors
 # Running `version` here proves it parses and resolves the _build
 # ebin directories just compiled -- the failure mode a pre-compiled
 # launcher would hide.
+# The loop stress harness compiles with the same posture Mix uses for
+# the library itself, so a warning there fails the build here too.
+echo "==> compiling loop utility"
+BUILD="$SCRIPT_DIR/_build/dev/lib"
+elixirc --warnings-as-errors \
+        -pa "$BUILD/libitb3/ebin" -pa "$BUILD/libitb3_elixir/ebin" \
+        -o loop loop/*.ex
+
 echo "==> eitb"
 ITB_LIBITB3_PATH="$REPO_ROOT/dist/linux-amd64/libitb3.so" \
 LD_LIBRARY_PATH="$REPO_ROOT/dist/linux-amd64${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \

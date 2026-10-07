@@ -1,4 +1,4 @@
-# bench_stream — stream-pump throughput vs plaintext size (Streaming
+# Stream-pump throughput vs plaintext size (Streaming
 # Non-AEAD profile) at 1 MiB / 16 MiB / 64 MiB. Each iteration runs a
 # full incremental session (begin -> write 1 MiB slices, draining the
 # spool after each write -> end -> drain until finished -> free).
@@ -26,9 +26,9 @@ defmodule BenchStream do
   @pump_buf 1 <<< 20
 
   def main do
-    # Bench-scale allocation churn leaks Go scratch heap unboundedly
-    # without a soft memory cap + aggressive GC; the return values
-    # report the previous settings, not an error.
+    # Bench-scale allocation churn grows the Go scratch heap
+    # unboundedly without a soft memory cap + aggressive GC; the
+    # return values report the previous settings, not an error.
     _ = ITB.set_memory_limit(4 <<< 30)
     _ = ITB.set_gc_percent(100)
 
@@ -102,12 +102,9 @@ defmodule BenchStream do
   # consumed, and drain_ready between feed slices can catch and drop
   # those chunks before drain_collect at end sees them.
   #
-  # Go core wrapper-nonce batching fix (streams.go +
-  # wrapper.NewWrapWriter) closes the earlier wrapper-nonce
-  # split-write race so a single-chunk pump_all with plain feed would
-  # now produce a wire whose nonce is not stranded, but drain_ready's
-  # byte-dropping behaviour remains fundamentally incompatible with
-  # wire collection across chunk boundaries.
+  # Single-chunk plain feed produces a wire whose nonce is not
+  # stranded, but drain_ready's byte-dropping behaviour remains
+  # incompatible with wire collection across chunk boundaries.
   defp pump_all(pipe, plain) do
     {:ok, session} = ITB.encrypt_stream(pipe)
     :ok = feed_noread(session, plain)

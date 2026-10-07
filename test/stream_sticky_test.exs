@@ -24,7 +24,7 @@ defmodule ITB.StreamStickyTest do
 
   # Flip positions walk the wire body (starting at the 3/4 mark with
   # a 1031-byte stride) so the probe stays clear of the outer framing
-  # header, whose corruption fails structurally before
+  # header, whose corruption can fail structurally before
   # authentication.
   defp probe(_receiver, _wire, attempt) when attempt >= 32, do: false
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env elixir
-# eitb — command-line demonstrator for the ITB Elixir binding.
+# Command-line demonstrator for the ITB Elixir binding.
 #
 # Subcommands:
 #
-#   eitb version                                   library + binding versions
-#   eitb profiles                                  registered profile catalogue
-#   eitb inspect <blob-hex>                        profile record of a blob
-#   eitb encrypt <profile> <in-file> <out-file>    Single Message encrypt
+#   eitb version
+#   eitb profiles
+#   eitb inspect <blob-hex>
+#   eitb encrypt <profile> <in-file> <out-file>
 #   eitb decrypt <profile> <blob-hex> <in-file> <out-file>
 #
 # `encrypt` prints the session blob (ITB.save/1) to stderr as hex;
@@ -15,6 +15,7 @@
 # routes Single Message versus streaming). `profiles` lists the
 # registered profile catalogue one name per line; the profiles that
 # carry a cipher surface are the ones `encrypt` / `decrypt` accept.
+# `inspect` prints the profile record a blob carries, as JSON.
 #
 # A plain executable script (not an embedded escript archive): the
 # NIF shim resolves its .so through the application priv dir, which
@@ -126,7 +127,7 @@ defmodule EITB do
 
   # Profiles whose canonical name begins with "streaming-" route
   # through the streaming session pair instead of the Single Message
-  # pair. A one-shot Streaming encrypt is a session opened, fed the
+  # pair. A one-shot streaming encrypt is a session opened, fed the
   # whole plaintext, and drained to a single binary via ITB.Stream.
   defp streaming_profile?(profile), do: String.starts_with?(profile, "streaming-")
 

@@ -66,4 +66,16 @@ defmodule ITB.Status do
   """
   @spec known() :: [t()]
   def known, do: @statuses
+
+  @doc """
+  The numeric libitb3 status code behind a status atom, mirroring the
+  C ABI enum. The error tuples carry the atom, which is what Elixir
+  code matches on; the number is what a diagnostic quotes when it has
+  to name the code the library itself uses. An atom outside the table
+  is the internal-error code.
+
+  Delegates to the Erlang binding's `:itb3.status_code/1`.
+  """
+  @spec code(t() | atom()) :: integer()
+  def code(status), do: :itb3.status_code(status)
 end

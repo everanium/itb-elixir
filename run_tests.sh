@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# run_tests.sh -- one-step test runner for the Elixir binding.
-# Builds libitb3.so + the C binding archive + the Erlang backend +
-# the Mix project via build.sh, then invokes `mix test`. Forwards
-# any positional arguments through to mix test (e.g. one file via
-# `./run_tests.sh test/smoke_test.exs`).
+# One-step test runner for the Elixir binding. Builds libitb3.so +
+# the C binding archive + the Erlang backend + the Mix project via
+# build.sh, then invokes `mix test`. Forwards any positional
+# arguments through to mix test (e.g. one file via `./run_tests.sh
+# test/smoke_test.exs`).
 #
 # Usage:
 #   ./run_tests.sh                       # full suite

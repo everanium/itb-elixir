@@ -1,4 +1,4 @@
-# bench_util — shared timing loop + env plumbing for the bench
+# Shared timing loop + env plumbing for the bench
 # scripts. Loaded via Code.require_file; not part of the library.
 
 defmodule BenchUtil do

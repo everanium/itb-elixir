@@ -1,4 +1,4 @@
-# bench_stream_one_shot — whole-buffer stream throughput vs plaintext
+# One-shot stream throughput vs plaintext
 # size (Streaming Non-AEAD profile) at 1 MiB / 16 MiB / 64 MiB. Each
 # iteration issues one ITB.encrypt_stream_one_shot/2 or
 # ITB.decrypt_stream_one_shot/2 call for callers holding the full
@@ -26,9 +26,9 @@ defmodule BenchStreamOneShot do
   @min_iters 3
 
   def main do
-    # Bench-scale allocation churn leaks Go scratch heap unboundedly
-    # without a soft memory cap + aggressive GC; the return values
-    # report the previous settings, not an error.
+    # Bench-scale allocation churn grows the Go scratch heap
+    # unboundedly without a soft memory cap + aggressive GC; the
+    # return values report the previous settings, not an error.
     _ = ITB.set_memory_limit(4 <<< 30)
     _ = ITB.set_gc_percent(100)
 
