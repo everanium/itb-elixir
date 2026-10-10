@@ -24,7 +24,7 @@
 # script's location: ../_build/dev/lib/{libitb3,libitb3_elixir}/ebin.
 
 defmodule EITB do
-  @eitb_elixir_version "0.5.1"
+  @eitb_elixir_version "0.5.5"
 
   def main(args) do
     :ok = add_binding_paths()
