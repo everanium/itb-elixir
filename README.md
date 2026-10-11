@@ -96,7 +96,7 @@ cap) as a map or keyword list. The resolved shape is written into
 the blob, so the receiver loads it with no opts of its own:
 
 ```elixir
-opts = %{"chunkSize" => 65536, "withWrapper" => false}
+opts = %{"mode" => 2, "chunkSize" => 65536, "withWrapper" => false}
 {:ok, sender} = ITB.init("singlemsg-triple-mac-v1", opts)
 {:ok, blob} = ITB.save(sender)
 {:ok, receiver} = ITB.load(blob)

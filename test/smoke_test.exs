@@ -104,9 +104,11 @@ defmodule ITB.SmokeTest do
     assert record["keybits"] > 0
     assert Map.has_key?(record, "nonce_bits")
     assert Map.has_key?(record, "barrier_fill")
+    assert record["container_mode"] == 1
     {:ok, looked} = ITB.lookup("singlemsg-triple-mac-v1")
     refute Map.has_key?(looked, "nonce_bits")
     refute Map.has_key?(looked, "barrier_fill")
+    refute Map.has_key?(looked, "container_mode")
     assert Map.drop(record, ["nonce_bits", "barrier_fill", "container_mode"]) == looked
     assert {:error, {:bad_input, _}} = ITB.inspect("not a blob")
     assert {:error, {:unknown_profile, _}} = ITB.lookup("no-such-profile")
@@ -114,6 +116,13 @@ defmodule ITB.SmokeTest do
     assert "singlemsg-triple-mac-v1" in names
     assert names == Enum.sort(names)
     for name <- names, do: assert(ITB.lookup!(name)["name"] == name)
+  end
+
+  test "inspect carries container_mode override" do
+    {:ok, pipe} = ITB.init("singlemsg-triple-mac-v1", %{mode: 2})
+    {:ok, blob} = ITB.save(pipe)
+    :ok = ITB.free(pipe)
+    assert ITB.inspect!(blob)["container_mode"] == 2
   end
 
   test "max_workers" do

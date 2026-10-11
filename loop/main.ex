@@ -673,6 +673,7 @@ defmodule Loop.Main do
   # reopens use the retained blob; save is never called again.
   defp build_pipeline(%Config{} = cfg, profile) do
     base = [
+      {:mode, Integer.to_string(cfg.blob_mode)},
       {:innerHash, cfg.hash},
       {:macName, cfg.mac},
       {:withParallax, to_string(cfg.parallax)},
@@ -714,54 +715,11 @@ defmodule Loop.Main do
                 :error
 
               {:ok, blob} ->
-                apply_blob_mode(cfg, profile, pipe, blob)
+                log_pipeline_initialised(profile, blob)
+                {:ok, pipe, blob}
             end
         end
     end
-  end
-
-  # The sizing mode is not an opts knob: under --blob-mode 2 the Init
-  # blob is edited and the pipeline reopened from it, so the retained
-  # blob (the one blob-cycle reopens from) carries the edited mode.
-  defp apply_blob_mode(%Config{blob_mode: 1}, profile, pipe, blob) do
-    log_pipeline_initialised(profile, blob)
-    {:ok, pipe, blob}
-  end
-
-  defp apply_blob_mode(%Config{blob_mode: mode}, profile, pipe, blob) do
-    ITB.free(pipe)
-
-    case edit_inner_blob_mode(blob, mode) do
-      {:error, detail} ->
-        err("rewrite blob mode: #{detail}") && :error
-
-      {:ok, edited} ->
-        case ITB.load(edited) do
-          {:error, {status, detail}} ->
-            err("reload Mode 2 blob: " <> status_text(status, detail)) && :error
-
-          {:ok, reloaded} ->
-            log_pipeline_initialised(profile, edited)
-            {:ok, reloaded, edited}
-        end
-    end
-  end
-
-  # Sets the inner blob's integer "mode" (1 = per-region, 2 =
-  # per-container) of a session blob through the OTP json module. The
-  # profile record "p" carries its own string "mode"; the target is the
-  # one under "ib". Integers and strings round-trip unchanged; only the
-  # key order may differ.
-  defp edit_inner_blob_mode(blob, mode) do
-    case :json.decode(blob) do
-      %{"ib" => %{"mode" => m} = inner} = session when is_integer(m) ->
-        {:ok, IO.iodata_to_binary(:json.encode(%{session | "ib" => %{inner | "mode" => mode}}))}
-
-      _ ->
-        {:error, "inner blob mode field not found"}
-    end
-  rescue
-    e -> {:error, Exception.message(e)}
   end
 
   # Prints the construction line with the recipe read back from the
