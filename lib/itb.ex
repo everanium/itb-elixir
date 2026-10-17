@@ -89,6 +89,23 @@ defmodule ITB do
   def init!(profile, opts \\ %{}), do: bang(init(profile, opts))
 
   @doc """
+  Deterministically constructs a Pipeline from eight caller-supplied
+  master keys (one per canonical seed slot 0..7) against the named
+  profile and options. The eight master keys must come from
+  independent entropy or key-agreement sources; never derive all
+  eight keys from a single secret or a single KDF parent key.
+  """
+  @spec init_keys(iodata() | atom(), [iodata()], opts()) ::
+          {:ok, pipeline()} | {:error, reason()}
+  def init_keys(profile, masters, opts \\ %{}),
+    do: :itb3.init_keys(profile, opts, masters)
+
+  @doc "As `init_keys/3`, unwrapping the pipeline or raising `ITB.Error`."
+  @spec init_keys!(iodata() | atom(), [iodata()], opts()) :: pipeline()
+  def init_keys!(profile, masters, opts \\ %{}),
+    do: bang(init_keys(profile, masters, opts))
+
+  @doc """
   Reconstructs a Pipeline from a blob produced by `save/1` or
   `rekey/3`. The blob's embedded profile record is the sole
   structural source — no profile name, no opts. `perm_master` /
@@ -376,7 +393,7 @@ defmodule ITB do
   # Runtime + diagnostics
   # ------------------------------------------------------------------
 
-  @doc ~S(The libitb3 library version string, e.g. `"0.7.2"`.)
+  @doc ~S(The libitb3 library version string, e.g. `"0.7.3"`.)
   @spec version() :: {:ok, binary()} | {:error, reason()}
   def version, do: :itb3.version()
 

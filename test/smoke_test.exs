@@ -32,6 +32,24 @@ defmodule ITB.SmokeTest do
     :ok = ITB.free(sender)
   end
 
+  test "init_keys determinism and validation" do
+    masters = for i <- 1..8, do: :binary.copy(<<0x11 * i>>, 32)
+    {:ok, p1} = ITB.init_keys("singlemsg-triple-mac-v1", masters)
+    p2 = ITB.init_keys!("singlemsg-triple-mac-v1", masters, [])
+    assert ITB.save!(p1) == ITB.save!(p2)
+    plain = "init_keys determinism payload"
+    {:ok, wire} = ITB.encrypt_message(p1, plain)
+    assert {:ok, plain} == ITB.decrypt_message(p2, wire)
+    :ok = ITB.free(p2)
+    :ok = ITB.free(p1)
+
+    dup = List.replace_at(masters, 1, hd(masters))
+    assert {:error, {:bad_input, _}} = ITB.init_keys("singlemsg-triple-mac-v1", dup)
+
+    short = List.replace_at(masters, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>)
+    assert {:error, {:bad_input, _}} = ITB.init_keys("singlemsg-triple-mac-v1", short)
+  end
+
   test "version" do
     {:ok, version} = ITB.version()
     assert byte_size(version) > 0
