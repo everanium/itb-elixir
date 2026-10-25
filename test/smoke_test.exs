@@ -229,4 +229,27 @@ defmodule ITB.SmokeTest do
     :ok = ITB.register("elixir-binding-test-drbg-copy", copy)
     assert ITB.lookup!("elixir-binding-test-drbg-copy")["drbg"] == "csprng"
   end
+
+  test "interlock 168 round trip and validation" do
+    {:ok, sender} = ITB.init("singlemsg-triple-mac-v1", %{interlock: "168"})
+    {:ok, blob} = ITB.save(sender)
+    {:ok, receiver} = ITB.load(blob)
+    plain = "interlock 168 round-trip payload"
+    {:ok, wire} = ITB.encrypt_message(sender, plain)
+    assert {:ok, plain} == ITB.decrypt_message(receiver, wire)
+    assert ITB.inspect!(blob)["interlock"] == "168"
+    :ok = ITB.free(receiver)
+    :ok = ITB.free(sender)
+
+    {:ok, def_pipe} = ITB.init("singlemsg-triple-mac-v1", %{interlock: "48"})
+    {:ok, def_blob} = ITB.save(def_pipe)
+    :ok = ITB.free(def_pipe)
+    refute Map.has_key?(ITB.inspect!(def_blob), "interlock")
+
+    assert {:error, {:bad_input, _}} =
+             ITB.init("singlemsg-triple-mac-v1", %{innerHash: "blake3", interlock: "168"})
+
+    assert {:error, {:bad_input, _}} =
+             ITB.init("singlemsg-triple-mac-v1", %{interlock: "96"})
+  end
 end

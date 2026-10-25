@@ -25,6 +25,7 @@ defmodule Loop.Config do
             chunk_size: 0,
             barrier_fill: 0,
             drbg: "",
+            interlock: "",
             gomaxprocs: 0,
             rekey_every: 0,
             blob_cycle_every: 0,

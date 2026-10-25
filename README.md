@@ -92,11 +92,12 @@ directory, so no `LD_LIBRARY_PATH` is needed at runtime.
 
 Opts override the profile default at `ITB.init` (chunk size, outer
 cipher, parallax on/off, wrapper on/off, MAC name, palette, worker
-cap) as a map or keyword list. The resolved shape is written into
-the blob, so the receiver loads it with no opts of its own:
+cap, interlock width `"48"` | `"168"`) as a map or keyword list. The
+resolved shape is written into the blob, so the receiver loads it with
+no opts of its own:
 
 ```elixir
-opts = %{"mode" => 2, "chunkSize" => 65536, "withWrapper" => false}
+opts = %{"mode" => 2, "interlock" => "168", "chunkSize" => 65536, "withWrapper" => false}
 {:ok, sender} = ITB.init("singlemsg-triple-mac-v1", opts)
 {:ok, blob} = ITB.save(sender)
 {:ok, receiver} = ITB.load(blob)

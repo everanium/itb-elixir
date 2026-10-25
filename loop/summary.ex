@@ -218,6 +218,7 @@ defmodule Loop.Summary do
       ",\"blob_mode\":", i(cfg.blob_mode),
       ",\"drbg\":", jstr(cfg.drbg),
       ",\"drbg_auto_tier\":", jstr(drbg_auto_tier()),
+      ",\"interlock\":", jstr(cfg.interlock),
       ",\"chunk_size_bytes\":", i(cfg.chunk_size),
       ",\"barrier_fill\":", i(cfg.barrier_fill),
       ",\"parallax\":", jstr(Loop.Main.on_off(cfg.parallax)),

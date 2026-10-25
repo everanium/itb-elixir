@@ -180,6 +180,8 @@ defmodule Loop.Main do
     {"goroutines", "int", :int,
      "concurrent workers (1..10); on runtimes without parallelism values above 1 are clamped to 1"},
     {"hash", "string", :string, "inner ITB hash primitive name"},
+    {"interlock", "string", :string,
+     "Interlocked Barrier chunk width: 48 | 168; empty = profile default (48; 168 requires 512-bit hash)"},
     {"iterations", "int", :int64, "fixed per-worker iteration count; 0 = duration-based"},
     {"json-output", "", :bool,
      "print the final summary as one compact JSON object instead of log lines"},
@@ -219,6 +221,7 @@ defmodule Loop.Main do
     "gomaxprocs" => 0,
     "goroutines" => 3,
     "hash" => "areion512",
+    "interlock" => "",
     "iterations" => 0,
     "json-output" => false,
     "key-bits" => 0,
@@ -375,6 +378,7 @@ defmodule Loop.Main do
          {:ok, cfg} <- resolve_nonce_bits(v, cfg),
          {:ok, cfg} <- resolve_blob_mode(v, cfg),
          {:ok, cfg} <- resolve_barrier_fill(v, cfg),
+         {:ok, cfg} <- resolve_interlock(v, cfg),
          {:ok, cfg} <- resolve_chunk_size(v, cfg),
          {:ok, cfg} <- resolve_gomaxprocs(v, cfg),
          {:ok, cfg} <- resolve_rekey(v, cfg),
@@ -571,6 +575,16 @@ defmodule Loop.Main do
     end
   end
 
+  defp resolve_interlock(v, cfg) do
+    case v["interlock"] do
+      il when il in ["", "48", "168"] ->
+        {:ok, %{cfg | interlock: il}}
+
+      il ->
+        err("--interlock must be 48 | 168 (or empty = profile default), got \"#{il}\"") && :error
+    end
+  end
+
   defp resolve_chunk_size(v, cfg) do
     case Size.parse_size(v["chunk-size"]) do
       :error -> err("--chunk-size: invalid size \"#{v["chunk-size"]}\"") && :error
@@ -682,6 +696,7 @@ defmodule Loop.Main do
       {:nonceBits, Integer.to_string(cfg.nonce_bits)},
       {:barrierFill, Integer.to_string(cfg.barrier_fill)},
       {:drbg, cfg.drbg},
+      {:interlock, cfg.interlock},
       {:chunkSize, Integer.to_string(cfg.chunk_size)}
     ]
 
@@ -745,6 +760,10 @@ defmodule Loop.Main do
             case record_str(record, "drbg") do
               "-" -> ""
               drbg -> " drbg=#{drbg}"
+            end <>
+            case record_str(record, "interlock") do
+              "-" -> ""
+              il -> " interlock=#{il}"
             end
         )
     end
@@ -884,7 +903,8 @@ defmodule Loop.Main do
         "payload-mode=#{Payload.mode_name(cfg.payload_mode)} seed=#{cfg.seed} " <>
         "json-output=#{cfg.json_output}" <>
         if(cfg.blob_mode != 1, do: " blob-mode=#{cfg.blob_mode}", else: "") <>
-        if(cfg.drbg != "", do: " drbg=#{cfg.drbg}", else: "")
+        if(cfg.drbg != "", do: " drbg=#{cfg.drbg}", else: "") <>
+        if(cfg.interlock != "", do: " interlock=#{cfg.interlock}", else: "")
     )
 
     log(
