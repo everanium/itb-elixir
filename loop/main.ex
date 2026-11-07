@@ -167,7 +167,7 @@ defmodule Loop.Main do
     {"blob-cycle-every", "int", :int64,
      "reopen each pipeline from its session blob every N iterations per worker; 0 = never"},
     {"blob-mode", "int", :int,
-     "container floor sizing mode: 1 (per-region, default) | 2 (per-container)"},
+     "container floor sizing mode: 1 (per-region, default) | 2 (per-container) | 3 (gauss-posit)"},
     {"chunk-size", "string", :string,
      "streaming chunk-size budget (e.g. 4MB); 0 = profile default; inert for pure message shape"},
     {"drbg", "string", :string,
@@ -553,11 +553,11 @@ defmodule Loop.Main do
 
   defp resolve_blob_mode(v, cfg) do
     case v["blob-mode"] do
-      m when m in [1, 2] ->
+      m when m in [1, 2, 3] ->
         {:ok, %{cfg | blob_mode: m}}
 
       m ->
-        err("--blob-mode must be 1 (per-region) | 2 (per-container), got #{m}") && :error
+        err("--blob-mode must be 1 (per-region) | 2 (per-container) | 3 (gauss-posit), got #{m}") && :error
     end
   end
 
@@ -756,7 +756,10 @@ defmodule Loop.Main do
             "chunk-size=#{record_int(record, "chunk")} mac=#{record_str(record, "mac")} " <>
             "parallax=#{on_off(record_bool(record, "parallax"))} " <>
             "wrapper=#{on_off(record_bool(record, "wrapper"))}" <>
-            if(record_int(record, "container_mode") == 2, do: " container-mode=2", else: "") <>
+            case record_int(record, "container_mode") do
+              cm when cm == 2 or cm == 3 -> " container-mode=#{cm}"
+              _ -> ""
+            end <>
             case record_str(record, "drbg") do
               "-" -> ""
               drbg -> " drbg=#{drbg}"

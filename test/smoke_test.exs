@@ -141,6 +141,11 @@ defmodule ITB.SmokeTest do
     {:ok, blob} = ITB.save(pipe)
     :ok = ITB.free(pipe)
     assert ITB.inspect!(blob)["container_mode"] == 2
+
+    {:ok, p3} = ITB.init("singlemsg-triple-mac-v1", %{mode: 3})
+    {:ok, b3} = ITB.save(p3)
+    :ok = ITB.free(p3)
+    assert ITB.inspect!(b3)["container_mode"] == 3
   end
 
   test "max_workers" do
